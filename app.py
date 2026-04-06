@@ -8,7 +8,6 @@ from app import app, db
 def create_product():
     data = request.get_json()
 
-    # --- Validation ---
     required_fields = ['name', 'sku', 'price']
     for field in required_fields:
         if field not in data:
@@ -22,21 +21,22 @@ def create_product():
         return jsonify({"error": "Invalid price format"}), 400
 
     initial_quantity = data.get('initial_quantity', None)
-    if initial_quantity is not None and initial_quantity < 0:
-        return jsonify({"error": "Quantity cannot be negative"}), 400
+    if initial_quantity is not None:
+        if initial_quantity < 0:
+            return jsonify({"error": "Quantity cannot be negative"}), 400
+        if not data.get('warehouse_id'):
+            return jsonify({"error": "warehouse_id is required when setting an initial_quantity"}), 400
 
-    # --- Transaction ---
     try:
-        with db.session.begin():  # Single transaction
-            # Create product (no warehouse_id here)
+        with db.session.begin():
             product = Product(
                 name=data['name'],
                 sku=data['sku'],
                 price=price
             )
             db.session.add(product)
+            db.session.flush() 
 
-            # Optional initial inventory
             if initial_quantity is not None and data.get('warehouse_id'):
                 inventory = Inventory(
                     product_id=product.id,
@@ -49,7 +49,7 @@ def create_product():
 
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"error": "SKU already exists"}), 409
+        return jsonify({"error": "SKU already exists or database constraint violated"}), 409
 
     except Exception as e:
         db.session.rollback()
